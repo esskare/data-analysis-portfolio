@@ -7,85 +7,139 @@ from layoffs;
 Create table layoffs_staging
 like layoffs;
 insert layoffs_staging
-select *
-from layoffs;
 
 -- Objectives
 -- 1. Remove duplicates
-select *,
-row_number() over(
-partition by company, location, industry, total_laid_off, percentage_laid_off, `date`, 
-stage, country, funds_raised_millions ) as row_num
-from layoffs_staging;
+SELECT *
+FROM world_layoffs.layoffs_staging
+;
 
-with duplicate_cte as 
+SELECT company, industry, total_laid_off,`date`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off,`date`) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging;
+
+SELECT *
+FROM (
+	SELECT company, industry, total_laid_off,`date`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, industry, total_laid_off,`date`
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1;
+    
+-- let's just look at oda to confirm
+SELECT *
+FROM world_layoffs.layoffs_staging
+WHERE company = 'Oda'
+;
+-- it looks like these are all legitimate entries and shouldn't be deleted. We need to really look at every single row to be accurate
+
+-- these are our real duplicates 
+SELECT *
+FROM (
+	SELECT company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1;
+
+-- these are the ones we want to delete where the row number is > 1 or 2or greater essentially
+
+-- now you may want to write it like this:
+WITH DELETE_CTE AS 
 (
-select *,
-row_number() over(
-partition by company, location, industry, total_laid_off, percentage_laid_off, `date`, 
-stage, country, funds_raised_millions ) as row_num
-from layoffs_staging
+SELECT *
+FROM (
+	SELECT company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging
+) duplicates
+WHERE 
+	row_num > 1
 )
--- if they have duplicate label the row_num as 2
-select *
-from duplicate_cte
-where row_num > 1;
--- confirmation
-select *
-from layoffs_staging
-where company = 'Casper'; # this currently has 1 other duplicate
+DELETE
+FROM DELETE_CTE
+;
 
-select *,
-row_number() over(
-partition by company, location, industry, total_laid_off, percentage_laid_off, `date`, 
-stage, country, funds_raised_millions ) as row_num
-from layoffs_staging;
 
-with duplicate_cte as 
-(
-select *,
-row_number() over(
-partition by company, location, industry, total_laid_off, percentage_laid_off, `date`, 
-stage, country, funds_raised_millions ) as row_num
-from layoffs_staging
+WITH DELETE_CTE AS (
+	SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, 
+    ROW_NUMBER() OVER (PARTITION BY company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions) AS row_num
+	FROM world_layoffs.layoffs_staging
 )
--- if they have duplicate label the row_num as 2
-delete
-from duplicate_cte
-where row_num > 1;
+DELETE FROM world_layoffs.layoffs_staging
+WHERE (company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, row_num) IN (
+	SELECT company, location, industry, total_laid_off, percentage_laid_off, `date`, stage, country, funds_raised_millions, row_num
+	FROM DELETE_CTE
+) AND row_num > 1;
 
--- create another staging table to add the row_num column and use it to delete the dublipacte
-CREATE TABLE `layoffs_staging2` (
-  `company` text,
-  `location` text,
-  `industry` text,
-  `total_laid_off` int DEFAULT NULL,
-  `percentage_laid_off` text,
-  `date` text,
-  `stage` text,
-  `country` text,
-  `funds_raised_millions` int DEFAULT NULL,
-  `row_num` int
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+-- one solution, which I think is a good one. Is to create a new column and add those row numbers in. Then delete where row numbers are over 2, then delete that column
+-- so let's do it!!
 
-select *
-from layoffs_staging2
-where row_num >1;
+ALTER TABLE world_layoffs.layoffs_staging ADD row_num INT;
 
-insert into layoffs_staging2
-select *,
-row_number() over(
-partition by company, location, industry, total_laid_off, percentage_laid_off, `date`, 
-stage, country, funds_raised_millions ) as row_num
-from layoffs_staging;
--- delete
-delete 
-from layoffs_staging2
-where row_num >1;
+SELECT *
+FROM world_layoffs.layoffs_staging
+;
+
+CREATE TABLE `world_layoffs`.`layoffs_staging2` (
+`company` text,
+`location`text,
+`industry`text,
+`total_laid_off` INT,
+`percentage_laid_off` text,
+`date` text,
+`stage`text,
+`country` text,
+`funds_raised_millions` int,
+row_num INT
+);
+
+INSERT INTO `world_layoffs`.`layoffs_staging2`
+(`company`,
+`location`,
+`industry`,
+`total_laid_off`,
+`percentage_laid_off`,
+`date`,
+`stage`,
+`country`,
+`funds_raised_millions`,
+`row_num`)
+SELECT `company`,
+`location`,
+`industry`,
+`total_laid_off`,
+`percentage_laid_off`,
+`date`,
+`stage`,
+`country`,
+`funds_raised_millions`,
+		ROW_NUMBER() OVER (
+			PARTITION BY company, location, industry, total_laid_off,percentage_laid_off,`date`, stage, country, funds_raised_millions
+			) AS row_num
+	FROM 
+		world_layoffs.layoffs_staging;
+
+-- now that we have this we can delete rows were row_num is greater than 2
+
+DELETE FROM world_layoffs.layoffs_staging2
+WHERE row_num >= 2;
+
 select *
 from layoffs_staging2;
-
-
 -- 2. Standardize the data : finding issues and fixing them
 
 select distinct company
@@ -142,7 +196,7 @@ and percentage_laid_off is null;
 -- setting the blanks to null for recognition
 update layoffs_staging2
 set industry = null
-where industry = ' ';
+where industry = '';
 
 select *
 from layoffs_staging2
@@ -183,7 +237,8 @@ and percentage_laid_off is null;
 select *
 from layoffs_staging2;
 alter table layoffs_staging2
-drop column row_num; 
+drop column row_num;
+
 
 
 
