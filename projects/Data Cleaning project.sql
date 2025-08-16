@@ -88,25 +88,102 @@ from layoffs_staging2;
 
 -- 2. Standardize the data : finding issues and fixing them
 
+select distinct company
+from layoffs_staging2
+order by 1;
+-- remove the whitespace
 select company, trim(company) 
 from layoffs_staging2;
--- removed the whitespace
 update layoffs_staging2
 set company = trim(company);
 
+select distinct industry
+from layoffs_staging2
+order by 1;
+-- grouped into similar industry name i.e. (crypto & cryptocurrency) = crypto
 select *
 from layoffs_staging2
 where industry like 'Crypto%';
-
 update layoffs_staging2
 set industry = 'Crypto'
 where industry like 'Crypto%';
 
+select distinct country
+from layoffs_staging2
+order by 1;
+--  #look for the period at the end and trim
+select distinct country, trim(trailing '.' from country)
+from layoffs_staging2;
+
+update layoffs_staging2
+set country = trim(trailing '.' from country)
+where country like 'United States%';
+
+select `date`
+from layoffs_staging2;
+-- taking the text and converting it into the date format
+select `date`, 
+str_to_date(`date`, '%m/%d/%Y') 
+from layoffs_staging2;
+update layoffs_staging2
+set `date` = str_to_date(`date`, '%m/%d/%Y');
+
+-- change the data type of date from text to datetime
+alter table layoffs_staging2
+modify column `date` date;
+
 
 -- 3. Null values/ blank values
+select *
+from layoffs_staging2
+where total_laid_off is null
+and percentage_laid_off is null;
+
+-- setting the blanks to null for recognition
+update layoffs_staging2
+set industry = null
+where industry = ' ';
+
+select *
+from layoffs_staging2
+where industry is null
+or industry = '';
+
+-- populating the empty rows
+select *
+from layoffs_staging2
+where company = 'Airbnb';
+
+select t1.industry, t2.industry
+from layoffs_staging2 t1
+join layoffs_staging2 t2
+	on t1.company = t2.company
+where (t1.industry is null or t1.industry = '')
+and t2.industry is not null;
+
+update layoffs_staging2 t1
+join layoffs_staging2 t2
+	on t1.company = t2.company
+set t1.company = t2.company
+where (t1.industry is null or t1.industry = '')
+and t2.industry is not null;
+
 -- 4. Remove unnecesarry columns and rows
 
+select *
+from layoffs_staging2
+where total_laid_off is null
+and percentage_laid_off is null;
 
+delete
+from layoffs_staging2
+where total_laid_off is null
+and percentage_laid_off is null;
+
+select *
+from layoffs_staging2;
+alter table layoffs_staging2
+drop column row_num; 
 
 
 
